@@ -1,47 +1,46 @@
-# 🌿 생물 도감 데이터 자동 수집 플랫폼 (Bio Encyclopedia Collector)
+# 🌿 생물 도감 데이터 자동 수집 백엔드 파이프라인 (Bio Encyclopedia Collector)
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B)
-![Playwright](https://img.shields.io/badge/Playwright-Crawler-2EAD33)
+![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-Serverless-FF9900)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI/CD-2088FF)
 ![MySQL](https://img.shields.io/badge/MySQL-Database-4479A1)
 
-> **위키백과(Wikipedia)**, **위키미디어 커먼즈(Wikimedia Commons)**, 그리고 **GBIF(세계 생물다양성 정보기구)**를 연동하여 특정 생물 종(Species)의 족보(Taxonomy), 서식지 정보, 고해상도 이미지를 원클릭으로 자동 수집하고 DB에 적재하는 파이프라인 플랫폼입니다.
+> **위키백과(Wikipedia)**, **위키미디어 커먼즈(Wikimedia Commons)**, 그리고 **GBIF(세계 생물다양성 정보기구)**를 연동하여 특정 생물 종(Species)의 족보(Taxonomy), 서식지 정보, 고해상도 이미지를 자동 수집하고 클라우드(S3 및 RDS)에 적재하는 서버리스(Serverless) 데이터 파이프라인 플랫폼입니다.
 
 ---
 
-## ✨ 주요 기능 (Key Features)
+## ✨ 핵심 아키텍처 (AWS Serverless)
 
-### 1. 🖥️ 직관적인 웹 대시보드 (Streamlit)
-- 복잡한 터미널 명령어 없이 깔끔한 웹 환경에서 수집을 제어합니다.
-- 수집된 생물 도감을 **갤러리 형태**로 시각화하여 조회합니다.
-- 데이터베이스를 **인터랙티브 표(Dataframe)**로 열람하고 클릭 한 번에 **엑셀(CSV)로 내보낼 수 있습니다.**
+본 프로젝트는 무거운 컨테이너(Docker)나 항상 켜져 있는 서버(EC2) 없이, **AWS SAM (Serverless Application Model)** 을 활용한 완전 관리형 서버리스 아키텍처로 구동됩니다.
 
-### 2. 🤖 지능형 크롤링 및 중복 검증 시스템
-- **단일 입력 지원**: 학명 또는 국명 중 하나만 입력해도 찰떡같이 알아듣고 알아서 수집합니다.
-- **크롤링 사전 방어선**: 웹으로 데이터를 긁어오기 직전, 우리 DB를 먼저 탐색하여 이미 존재하는 생물이면 리소스 낭비를 막고 즉시 스킵합니다.
-- **이미지 pHash 중복 검사**: 이미지의 색상이나 크기가 미세하게 달라도, 64비트 Perceptual Hash를 계산해 동일한 사진(해밍거리 $\le 5$)이면 저장하지 않고 필터링합니다.
-
-### 3. 🚀 GBIF 기반 Top-Down 대규모 배치 수집
-- 단순히 한 마리씩 찾는 것을 넘어, **"포유강(Mammalia)에 속한 생물 다 찾아줘!"**가 가능합니다.
-- GBIF 공공 API를 통해 수천 개의 학명 리스트를 추출하고, 이를 큐(Queue)에 담아 밤새 연속으로 자동 수집(Batch)을 돌릴 수 있습니다.
-
-### 4. 🗜️ 이미지 자동 최적화 및 명명 규칙
-- 수집된 원본 이미지는 무거운 원본 대신 초고효율의 `WebP` 포맷으로 자동 압축됩니다.
-- 파일명은 임의의 암호문이 아닌, 직관적인 **`수집일자_영문학명(국문명)_순번.webp`** 형태로 예쁘게 정리되어 로컬에 저장됩니다.
+1.  **Crawling Lambda**: GBIF 또는 트리거를 통해 학명을 전달받아 위키백과(HTML) 및 커먼즈(API) 데이터를 즉시 수집하고 원시 데이터를 S3(`raw/`)에 저장합니다.
+2.  **Extract Lambda**: S3의 원본 데이터에서 BeautifulSoup을 사용해 Taxonomy(분류계통)와 서식지만 추출하고 정제하여 S3(`interim/`)에 넘깁니다.
+3.  **Preprocess Lambda**: 이미지 다운로드, WebP 고효율 압축 변환 및 pHash(64비트 지문) 알고리즘을 통한 이미지 완전 중복 차단을 수행하고 S3(`processed/`)에 보관합니다.
+4.  **Load Lambda**: 최종 완성된 정제 데이터와 S3 이미지 링크를 프라이빗 VPC 내부에 위치한 **AWS RDS (MySQL)** 데이터베이스에 안전하게 꽂아 넣습니다.
 
 ---
 
-## 🛠 환경 설정 및 설치 가이드
+## 🚀 왜 Playwright 대신 API를 선택했는가?
+
+기존 브라우저 자동화 도구(Playwright)는 무거운 Docker 이미지를 요구하며 AWS Lambda의 구동 속도를 크게 저하시켰습니다. 이를 해결하기 위해:
+*   위키백과는 초경량 **`BeautifulSoup`** 파서로 대체.
+*   커먼즈 미디어는 마우스 클릭 대신 **`Wikimedia REST API`**로 통신.
+*   **결과**: 람다 함수 용량이 불과 수 MB 단위로 줄어들었으며 수집 속도는 수십 배 빨라졌습니다.
+
+---
+
+## 🛠 환경 설정 및 설치 가이드 (로컬 테스트용)
+
+클라우드에 배포하기 전, 로컬에서 터미널을 통해 파이프라인 단계를 테스트할 수 있습니다.
 
 ### 1. 패키지 설치
-이 프로젝트는 Python 3.11 이상의 환경을 권장합니다.
 ```bash
 # 필수 라이브러리 설치
 pip install -r requirements.txt
 ```
 
 ### 2. 환경 변수 설정
-프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 MySQL DB 접속 정보를 입력합니다.
+프로젝트 최상단에 `.env` 파일을 만들고 로컬 또는 테스트 DB 접속 정보를 적습니다.
 ```env
 DB_HOST=localhost
 DB_PORT=3306
@@ -51,16 +50,21 @@ DB_NAME=bio_encyclopedia
 ```
 
 ### 3. 데이터베이스 초기화
-최초 실행 시, 제공된 스크립트를 사용하여 테이블 스키마를 초기화합니다.
 ```bash
 python init_db.py
 ```
 
+### 4. 로컬 파이프라인 실행
+```bash
+python run_pipeline.py "황소개구리"
+python run_pipeline.py "Ursus arctos" "불곰" NATIVE
+```
+
 ---
 
-## 💻 사용 방법 (How to use)
+## 🔒 배포 가이드 (CI/CD)
 
-가장 강력하고 편리한 방법은 **Streamlit 웹 대시보드**를 이용하는 것입니다.
+이 저장소는 GitHub Actions와 AWS OIDC(OpenID Connect)를 통해 안전하게 AWS 클라우드로 배포됩니다. `.env` 파일은 깃허브에 절대 올라가지 않으며, 프로덕션 환경 변수는 **GitHub Secrets**를 통해 주입됩니다.�다.
 
 ### 1️⃣ 웹 대시보드 모드 (권장)
 터미널에 아래 명령어를 입력하면 브라우저가 열리며 대시보드가 나타납니다.

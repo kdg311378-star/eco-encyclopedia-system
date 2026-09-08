@@ -1,0 +1,705 @@
+## CloudFormation 템플릿 버전 정의
+AWSTemplateFormatVersion: '2010-09-09'
+
+## SAM 구문을 표준 AWS CloudFormation 리소스로 변환하는 매크로 선언
+Transform: AWS::Serverless-2016-10-31
+
+## 템플릿 전체에 대한 설명
+Description: >
+  Books to Scrape 데이터 수집 파이프라인을 위한
+  AWS SAM 템플릿
+
+
+## ===========================================================
+## Parameters
+## 계정 및 환경마다 달라지는 AWS 리소스 값을 외부에서 전달
+## ===========================================================
+
+Parameters:
+
+  ## Amazon RDS MySQL Endpoint
+  DbHost:
+    Type: String
+    Description: Amazon RDS MySQL Endpoint
+
+  ## MySQL Port
+  DbPort:
+    Type: String
+    Default: '3306'
+    Description: Amazon RDS MySQL Port
+
+  ## MySQL Database 이름
+  DbName:
+    Type: String
+    Default: booksdb
+    Description: Amazon RDS MySQL Database Name
+
+  ## RDS가 자동 생성한 Secrets Manager Secret ARN
+  DbSecretArn:
+    Type: String
+    Description: Amazon RDS Managed Secrets Manager Secret ARN
+
+  ## Load Lambda가 실행될 VPC Subnet
+  LoadSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: VPC Subnet ID for Load Lambda
+
+  ## Load Lambda에 연결할 Security Group
+  LoadSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group ID for Load Lambda
+
+  ## EventBridge Scheduler 활성화 여부
+  ScheduleEnabled:
+    Type: String
+    Default: 'true'
+
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+    Description: Enable or disable EventBridge Scheduler
+
+  ## EventBridge Scheduler 실행 주기
+  ## 기본값: 매일 오전 5시 50분
+  ScheduleExpression:
+    Type: String
+    Default: 'cron(10 13 * * ? *)'
+    Description: EventBridge Scheduler cron expression
+
+
+## ===========================================================
+## Conditions
+## 조건에 따라 AWS 리소스 속성을 동적으로 결정
+## ===========================================================
+
+Conditions:
+
+  ## ScheduleEnabled 값이 true인지 확인
+  IsScheduleEnabled: !Equals
+    - !Ref ScheduleEnabled
+    - 'true'
+
+
+## ===========================================================
+## Globals
+## 모든 Lambda Function에 기본 적용되는 공통 설정
+## ===========================================================
+
+Globals:
+
+  Function:
+
+    ## Lambda Runtime
+    Runtime: python3.13
+
+    ## CPU 아키텍처
+    Architectures:
+      - x86_64
+
+    ## Lambda 메모리
+    MemorySize: 512
+
+    ## Lambda 최대 실행 시간
+    Timeout: 60
+
+
+## ===========================================================
+## Resources
+## 배포할 Lambda, S3, Step Functions, Scheduler 등의 AWS 리소스 정의
+## ===========================================================
+
+Resources:
+
+
+  ## =========================================================
+  ## Data Pipeline S3 Bucket
+  ## Raw / Interim / Processed 데이터 저장
+  ## =========================================================
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+
+    Properties:
+
+      ## S3 Public Access 차단
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+
+  ## =========================================================
+  ## Crawling Lambda
+  ## Books to Scrape 웹페이지 수집 → S3 Raw 저장
+  ## =========================================================
+
+  CrawlingFunction:
+    Type: AWS::Serverless::Function
+
+    Properties:
+
+      ## Lambda 물리적 이름
+      FunctionName: books-pipeline-crawling-lec
+
+      ## Lambda 배포 코드 루트
+      CodeUri: .
+
+      ## Lambda Handler
+      Handler: handlers.crawling_handler.lambda_handler
+
+      ## Lambda 설명
+      Description: >
+        Books to Scrape 페이지를 수집하는 Crawling Lambda
+
+      ## Lambda 환경변수
+      Environment:
+        Variables:
+
+          ## Lambda 임시 파일 저장 경로
+          DATA_DIR: /tmp/data
+
+          ## Data Pipeline S3 Bucket 이름
+          DATA_BUCKET_NAME: !Ref DataBucket
+
+      ## Lambda IAM 권한
+      Policies:
+
+        ## Raw HTML을 S3에 저장하기 위한 쓰기 권한
+        - S3WritePolicy:
+            BucketName: !Ref DataBucket
+
+
+  ## =========================================================
+  ## Extract Lambda
+  ## S3 Raw HTML 다운로드 → 파싱 → S3 Interim CSV 저장
+  ## =========================================================
+
+  ExtractFunction:
+    Type: AWS::Serverless::Function
+
+    Properties:
+
+      ## Lambda 물리적 이름
+      FunctionName: books-pipeline-extract-lec
+
+      ## Lambda 배포 코드 루트
+      CodeUri: .
+
+      ## Lambda Handler
+      Handler: handlers.extract_handler.lambda_handler
+
+      ## Lambda 설명
+      Description: >
+        S3 Raw HTML에서 도서 정보를 추출하는 Extract Lambda
+
+      ## Lambda 환경변수
+      Environment:
+        Variables:
+
+          ## Lambda 임시 파일 저장 경로
+          DATA_DIR: /tmp/data
+
+          ## Data Pipeline S3 Bucket 이름
+          DATA_BUCKET_NAME: !Ref DataBucket
+
+      ## Lambda IAM 권한
+      Policies:
+
+        ## Raw HTML 다운로드를 위한 S3 읽기 권한
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+
+        ## Interim CSV 업로드를 위한 S3 쓰기 권한
+        - S3WritePolicy:
+            BucketName: !Ref DataBucket
+
+
+  ## =========================================================
+  ## Preprocess Lambda
+  ## S3 Interim CSV 다운로드 → 전처리 → S3 Processed 저장
+  ## =========================================================
+
+  PreprocessFunction:
+    Type: AWS::Serverless::Function
+
+    Properties:
+
+      ## Lambda 물리적 이름
+      FunctionName: books-pipeline-preprocess-lec
+
+      ## Lambda 배포 코드 루트
+      CodeUri: .
+
+      ## Lambda Handler
+      Handler: handlers.preprocess_handler.lambda_handler
+
+      ## Lambda 설명
+      Description: >
+        S3 Interim 데이터를 전처리하여
+        Processed 데이터를 생성하는 Lambda
+
+      ## Lambda 환경변수
+      Environment:
+        Variables:
+
+          ## Lambda 임시 파일 저장 경로
+          DATA_DIR: /tmp/data
+
+          ## Data Pipeline S3 Bucket 이름
+          DATA_BUCKET_NAME: !Ref DataBucket
+
+      ## Lambda IAM 권한
+      Policies:
+
+        ## Interim CSV 다운로드를 위한 S3 읽기 권한
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+
+        ## Processed CSV 업로드를 위한 S3 쓰기 권한
+        - S3WritePolicy:
+            BucketName: !Ref DataBucket
+
+
+  ## =========================================================
+  ## Load Lambda
+  ## S3 Processed CSV 다운로드 → Amazon RDS MySQL 적재
+  ## =========================================================
+
+  LoadFunction:
+    Type: AWS::Serverless::Function
+
+    Properties:
+
+      ## Lambda 물리적 이름
+      FunctionName: books-pipeline-load-lec
+
+      ## Lambda 배포 코드 루트
+      CodeUri: .
+
+      ## Lambda Handler
+      Handler: handlers.load_handler.lambda_handler
+
+      ## Lambda 설명
+      Description: >
+        S3 Processed 데이터를 다운로드하여
+        Amazon RDS MySQL에 적재하는 Load Lambda
+
+      ## Lambda 환경변수
+      Environment:
+        Variables:
+
+          ## Lambda 임시 파일 저장 경로
+          DATA_DIR: /tmp/data
+
+          ## Data Pipeline S3 Bucket 이름
+          DATA_BUCKET_NAME: !Ref DataBucket
+
+          ## Amazon RDS MySQL Endpoint
+          DB_HOST: !Ref DbHost
+
+          ## Amazon RDS MySQL Port
+          DB_PORT: !Ref DbPort
+
+          ## MySQL Database 이름
+          DB_NAME: !Ref DbName
+
+          ## RDS가 관리하는 Secrets Manager Secret ARN
+          DB_SECRET_ARN: !Ref DbSecretArn
+
+      ## Load Lambda를 RDS와 동일 VPC에 연결
+      VpcConfig:
+
+        ## Load Lambda가 사용할 Security Group
+        SecurityGroupIds:
+          - !Ref LoadSecurityGroupId
+
+        ## Load Lambda가 사용할 Subnet
+        SubnetIds:
+          - !Ref LoadSubnetId
+
+      ## Load Lambda IAM 권한
+      Policies:
+
+        ## VPC 안에서 Lambda ENI를 생성/관리하기 위한 AWS 관리형 정책
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+
+        ## Processed CSV 다운로드를 위한 S3 읽기 권한
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+
+        ## RDS 관리형 Secret 조회를 위한 Secrets Manager 권한
+        - Statement:
+
+            - Sid: ReadDatabaseSecret
+              Effect: Allow
+
+              Action:
+                - secretsmanager:GetSecretValue
+
+              Resource:
+                - !Ref DbSecretArn
+
+
+  ## =========================================================
+  ## Step Functions 상태 머신
+  ## Crawling → Extract → Preprocess → Load 순차 실행
+  ## =========================================================
+
+  PipelineStateMachine:
+    Type: AWS::Serverless::StateMachine
+
+    Properties:
+
+      ## Step Functions 상태 머신 이름
+      Name: books-pipeline-state-machine-lec
+
+      ## Amazon States Language 기반 워크플로우 정의
+      Definition:
+
+        ## 상태 머신 시작 단계
+        StartAt: Crawling
+
+        ## 파이프라인 단계 정의
+        States:
+
+
+          ## -----------------------------------------------------
+          ## 1. Crawling Lambda 실행
+          ## -----------------------------------------------------
+
+          Crawling:
+            Type: Task
+
+            ## AWS Lambda 동기 호출
+            Resource: arn:aws:states:::lambda:invoke
+
+            Parameters:
+
+              ## Crawling Lambda ARN
+              FunctionName: !GetAtt CrawlingFunction.Arn
+
+              ## 현재 State 입력 전체를 Lambda Event로 전달
+              Payload.$: $
+
+            ## Lambda 응답 중 실제 Payload만 다음 State로 전달
+            OutputPath: $.Payload
+
+            ## 다음 실행 단계
+            Next: Extract
+
+
+          ## -----------------------------------------------------
+          ## 2. Extract Lambda 실행
+          ## -----------------------------------------------------
+
+          Extract:
+            Type: Task
+
+            ## AWS Lambda 동기 호출
+            Resource: arn:aws:states:::lambda:invoke
+
+            Parameters:
+
+              ## Extract Lambda ARN
+              FunctionName: !GetAtt ExtractFunction.Arn
+
+              ## Crawling 결과 전체를 Lambda Event로 전달
+              Payload.$: $
+
+            ## Lambda 응답 중 실제 Payload만 다음 State로 전달
+            OutputPath: $.Payload
+
+            ## 다음 실행 단계
+            Next: Preprocess
+
+
+          ## -----------------------------------------------------
+          ## 3. Preprocess Lambda 실행
+          ## -----------------------------------------------------
+
+          Preprocess:
+            Type: Task
+
+            ## AWS Lambda 동기 호출
+            Resource: arn:aws:states:::lambda:invoke
+
+            Parameters:
+
+              ## Preprocess Lambda ARN
+              FunctionName: !GetAtt PreprocessFunction.Arn
+
+              ## Extract 결과 전체를 Lambda Event로 전달
+              Payload.$: $
+
+            ## Lambda 응답 중 실제 Payload만 다음 State로 전달
+            OutputPath: $.Payload
+
+            ## 다음 실행 단계
+            Next: Load
+
+
+          ## -----------------------------------------------------
+          ## 4. Load Lambda 실행
+          ## -----------------------------------------------------
+
+          Load:
+            Type: Task
+
+            ## AWS Lambda 동기 호출
+            Resource: arn:aws:states:::lambda:invoke
+
+            Parameters:
+
+              ## Load Lambda ARN
+              FunctionName: !GetAtt LoadFunction.Arn
+
+              ## Preprocess 결과 전체를 Lambda Event로 전달
+              Payload.$: $
+
+            ## Lambda 응답 중 실제 Payload만 최종 결과로 사용
+            OutputPath: $.Payload
+
+            ## 상태 머신 실행 종료
+            End: true
+
+
+      ## =======================================================
+      ## Step Functions IAM 권한
+      ## 각 Lambda Function을 호출할 수 있는 최소 권한 부여
+      ## =======================================================
+
+      Policies:
+
+        ## Crawling Lambda 호출 권한
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CrawlingFunction
+
+        ## Extract Lambda 호출 권한
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ExtractFunction
+
+        ## Preprocess Lambda 호출 권한
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PreprocessFunction
+
+        ## Load Lambda 호출 권한
+        - LambdaInvokePolicy:
+            FunctionName: !Ref LoadFunction
+
+
+  ## =========================================================
+  ## EventBridge Scheduler IAM Role
+  ## Scheduler → Step Functions 실행 권한
+  ## =========================================================
+
+  PipelineSchedulerRole:
+    Type: AWS::IAM::Role
+
+    Properties:
+
+      ## IAM Role 신뢰 정책
+      ## EventBridge Scheduler가 이 Role을 사용할 수 있도록 허용
+      AssumeRolePolicyDocument:
+
+        Version: '2012-10-17'
+
+        Statement:
+
+          - Effect: Allow
+
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+
+            Action:
+              - sts:AssumeRole
+
+      ## Scheduler가 Step Functions를 실행하기 위한 IAM 정책
+      Policies:
+
+        - PolicyName: StartPipelineStateMachine
+
+          PolicyDocument:
+
+            Version: '2012-10-17'
+
+            Statement:
+
+              ## Step Functions 실행 시작 권한
+              - Effect: Allow
+
+                Action:
+                  - states:StartExecution
+
+                ## 실행할 상태 머신 ARN
+                Resource:
+                  - !Ref PipelineStateMachine
+
+
+  ## =========================================================
+  ## EventBridge Scheduler
+  ## 지정한 시간에 Step Functions 상태 머신 자동 실행
+  ## =========================================================
+
+  PipelineSchedule:
+    Type: AWS::Scheduler::Schedule
+
+    Properties:
+
+      ## Scheduler 이름
+      Name: books-pipeline-schedule-lec
+
+      ## Scheduler 설명
+      Description: >
+        Books 데이터 수집 Step Functions를
+        정해진 시간에 자동 실행하는 Scheduler
+
+      ## Scheduler 활성화 상태
+      ## ScheduleEnabled=true  → ENABLED
+      ## ScheduleEnabled=false → DISABLED
+      State: !If
+        - IsScheduleEnabled
+        - ENABLED
+        - DISABLED
+
+      ## 실행 Cron 표현식
+      ScheduleExpression: !Ref ScheduleExpression
+
+      ## Cron 표현식이 해석될 시간대
+      ScheduleExpressionTimezone: Asia/Seoul
+
+      ## Flexible Time Window 사용하지 않음
+      ## 지정된 스케줄 시간에 실행
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+
+      ## Scheduler가 실행할 대상
+      Target:
+
+        ## 실행 대상 Step Functions ARN
+        Arn: !Ref PipelineStateMachine
+
+        ## Scheduler가 사용할 IAM Role ARN
+        RoleArn: !GetAtt PipelineSchedulerRole.Arn
+
+        ## Step Functions 최초 입력 Event
+        Input: |
+          {
+            "start_page": 1,
+            "end_page": 3
+          }
+
+
+## ===========================================================
+## Outputs
+## Stack 배포 후 확인할 주요 리소스 정보
+## ===========================================================
+
+Outputs:
+
+
+  ## =========================================================
+  ## S3
+  ## =========================================================
+
+  ## Data Pipeline S3 Bucket 이름
+  DataBucketName:
+    Description: Data Pipeline S3 Bucket Name
+    Value: !Ref DataBucket
+
+
+  ## =========================================================
+  ## Crawling Lambda
+  ## =========================================================
+
+  ## Crawling Lambda 물리적 함수명
+  CrawlingFunctionName:
+    Description: Crawling Lambda Function Name
+    Value: !Ref CrawlingFunction
+
+  ## Crawling Lambda ARN
+  CrawlingFunctionArn:
+    Description: Crawling Lambda Function ARN
+    Value: !GetAtt CrawlingFunction.Arn
+
+
+  ## =========================================================
+  ## Extract Lambda
+  ## =========================================================
+
+  ## Extract Lambda 물리적 함수명
+  ExtractFunctionName:
+    Description: Extract Lambda Function Name
+    Value: !Ref ExtractFunction
+
+  ## Extract Lambda ARN
+  ExtractFunctionArn:
+    Description: Extract Lambda Function ARN
+    Value: !GetAtt ExtractFunction.Arn
+
+
+  ## =========================================================
+  ## Preprocess Lambda
+  ## =========================================================
+
+  ## Preprocess Lambda 물리적 함수명
+  PreprocessFunctionName:
+    Description: Preprocess Lambda Function Name
+    Value: !Ref PreprocessFunction
+
+  ## Preprocess Lambda ARN
+  PreprocessFunctionArn:
+    Description: Preprocess Lambda Function ARN
+    Value: !GetAtt PreprocessFunction.Arn
+
+
+  ## =========================================================
+  ## Load Lambda
+  ## =========================================================
+
+  ## Load Lambda 물리적 함수명
+  LoadFunctionName:
+    Description: Load Lambda Function Name
+    Value: !Ref LoadFunction
+
+  ## Load Lambda ARN
+  LoadFunctionArn:
+    Description: Load Lambda Function ARN
+    Value: !GetAtt LoadFunction.Arn
+
+
+  ## =========================================================
+  ## Step Functions
+  ## =========================================================
+
+  ## Step Functions 상태 머신 이름
+  PipelineStateMachineName:
+    Description: Books Pipeline Step Functions State Machine Name
+    Value: books-pipeline-state-machine
+
+  ## Step Functions 상태 머신 ARN
+  PipelineStateMachineArn:
+    Description: Books Pipeline Step Functions State Machine ARN
+    Value: !Ref PipelineStateMachine
+
+
+  ## =========================================================
+  ## EventBridge Scheduler
+  ## =========================================================
+
+  ## EventBridge Scheduler 이름
+  PipelineScheduleName:
+    Description: Books Pipeline EventBridge Scheduler Name
+    Value: !Ref PipelineSchedule
+
+  ## EventBridge Scheduler ARN
+  PipelineScheduleArn:
+    Description: Books Pipeline EventBridge Scheduler ARN
+    Value: !GetAtt PipelineSchedule.Arn
+
+  ## Scheduler가 사용하는 IAM Role ARN
+  PipelineSchedulerRoleArn:
+    Description: EventBridge Scheduler IAM Role ARN
+    Value: !GetAtt PipelineSchedulerRole.Arn
