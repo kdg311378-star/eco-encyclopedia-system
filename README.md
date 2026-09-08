@@ -38,9 +38,6 @@
 ```bash
 # 필수 라이브러리 설치
 pip install -r requirements.txt
-
-# Playwright 크롤러 브라우저 엔진 설치
-playwright install chromium
 ```
 
 ### 2. 환경 변수 설정
