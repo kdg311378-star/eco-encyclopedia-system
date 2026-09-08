@@ -1,0 +1,283 @@
+18. 빅데이터 수집시스템 개발
+anaconda 명령어
+가상환경 추가
+conda create --name 
+가상환경명
+ python=
+버전
+conda create --name 
+first
+ python=
+3.11
+주피터 노트북 패키지 설치
+conda install notebook
+커널 설정
+python -m ipykernel install --user --name 
+가상환경명
+ --display-name "
+커널명
+" 
+python -m ipykernel install --user --name crawling --display-name "Crawling"
+가상환경 삭제
+conda remove –-name 
+가상환경명
+ --all
+conda remove –-name 
+first
+ --all
+동적 웹페이지 크롤링
+https://quotes.toscrape.com/js/
+https://webscraper.io/test-sites/e-commerce/ajax/computers/laptops
+https://webscraper.io/test-sites/e-commerce/more/computers/laptops
+ 
+https://webscraper.io/test-sites/e-commerce/scroll/computers/laptops
+AWS CLI
+https://docs.aws.amazon.com/ko_kr/cli/latest/userguide/getting-started-install.html?utm_source=chatgpt.com
+AWS SAM CLI
+https://docs.aws.amazon.com/ko_kr/serverless-application-model/latest/developerguide/install-sam-cli.html?utm_source=chatgpt.com
+ 
+🚀 AWS 로그인 절차
+AWS access portal URL: 
+https://d-9067f7d2b3.awsapps.com/start
+ 
+https://d-9067f7d2b3.awsapps.com/start
+ 접속하여 
+아이디 입력 (@
+gmail.com
+ 제외)
+비밀번호 입력
+aws 액세스 포털 로그인
+AWS 로그인
+🚀 AWS SSO 로그인
+AWS access portal URL: 
+https://d-9067f7d2b3.awsapps.com/start
+ 
+SSO region : us-east-1
+ 
+AWS Data Collection Pipeline Workflow 
+                    Books to Scrape
+                           ↓
+              ┌─────────────────────┐
+              │   
+Crawling Lambda   
+  │
+              └──────────┬──────────┘
+                         │
+                         │ HTML Crawling
+                         ↓
+          /tmp/data/raw/html/{batch_id}/
+                         │
+                         │ S3 Upload
+                         ↓
+                S3 raw/{batch_id}/
+                         │
+                         │ Raw HTML
+                         ↓
+              ┌─────────────────────┐
+              │    
+    Extract Lambda   
+  │
+              └──────────┬──────────┘
+                         │
+                         │ S3 Download
+                         ↓
+          /tmp/data/raw/html/{batch_id}/
+                         │
+                         │ HTML Parsing
+                         ↓
+            /tmp/data/interim/{batch_id}/
+                         │
+                         │ S3 Upload
+                         ↓
+              S3 interim/{batch_id}/
+                         │
+                         │ Parsed CSV
+                         ↓
+              ┌─────────────────────┐
+              │ 
+Preprocess Lambda                      │
+              └──────────┬──────────┘
+                         │
+                         │ S3 Download
+                         ↓
+            /tmp/data/interim/{batch_id}/
+                         │
+                         │ 통합 / 전처리 / 검증
+                         ↓
+               /tmp/data/processed/
+                         │
+                         │ S3 Upload
+                         ↓
+            S3 processed/{batch_id}/
+                         │
+                         │ Processed CSV
+                         ↓
+              ┌─────────────────────┐
+              │    
+ Load Lambda    
+  │
+              └──────────┬──────────┘
+                         │
+                         │ UPSERT
+                         ↓
+                    RDS MySQL
+데이터 수집 파이프라인 전체 흐름도 (현재 구현 범위)
+정적 크롤링 데이터 파이프라인 전체 아키텍처
+CD
+GitHub Actions OIDC 연결 
+공급자 URL
+https://token.actions.githubusercontent.com
+대상(Audience)
+sts.amazonaws.com
+권한 정책 
+{
+"Version": "2012-10-17",
+"Statement": [
+{
+"Sid": "CloudFormation",
+"Effect": "Allow",
+"Action": [
+"cloudformation:*"
+],
+"Resource": "*"
+},
+{
+"Sid": "Lambda",
+"Effect": "Allow",
+"Action": [
+"lambda:*"
+],
+"Resource": "*"
+},
+{
+"Sid": "S3",
+"Effect": "Allow",
+"Action": [
+"s3:*"
+],
+"Resource": "*"
+},
+{
+"Sid": "StepFunctions",
+"Effect": "Allow",
+"Action": [
+"states:*"
+],
+"Resource": "*"
+},
+{
+"Sid": "EventBridgeScheduler",
+"Effect": "Allow",
+"Action": [
+"scheduler:*"
+],
+"Resource": "*"
+},
+{
+"Sid": "EC2ForLambdaVpc",
+"Effect": "Allow",
+"Action": [
+"ec2:DescribeSecurityGroups",
+"ec2:DescribeSubnets",
+"ec2:DescribeVpcs"
+],
+"Resource": "*"
+},
+{
+"Sid": "IAMForSam",
+"Effect": "Allow",
+"Action": [
+"iam:CreateRole",
+"iam:GetRole",
+"iam:GetRolePolicy",
+"iam:DeleteRole",
+"iam:PassRole",
+"iam:PutRolePolicy",
+"iam:DeleteRolePolicy",
+"iam:AttachRolePolicy",
+"iam:DetachRolePolicy",
+"iam:UpdateAssumeRolePolicy",
+"iam:ListRolePolicies",
+"iam:ListAttachedRolePolicies",
+"iam:TagRole",
+"iam:UntagRole"
+],
+"Resource": "*"
+}
+]
+}
+신뢰 정책
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        
+"StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:<GITHUB_OWNER>@<GITHUB_OWNER_ID>/<REPOSITORY_NAME>@<REPOSITORY_ID>:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}
+GitHub 사용자 ID
+https://api.github.com/users/<GITHUB_OWNER>
+Repository ID
+https://api.github.com/repos/<GITHUB_OWNER>/<REPOSITORY_NAME>
+Variable
+설정 값
+설명
+AWS_ROLE_ARN
+arn:aws:iam::~~~~
+GitHub Actions가 OIDC로 Assume할 AWS IAM Role ARN
+AWS_REGION
+ap-northeast-2
+AWS 리소스를 배포할 서울 리전
+DB_HOST
+RDS Endpoint
+RDS MySQL 접속 Endpoint
+DB_SECRET_ARN
+RDS 관리형 Secret ARN
+Secrets Manager에 저장된 RDS 인증정보의 ARN
+LOAD_SUBNET_ID
+Load Lambda Subnet ID
+Load Lambda가 연결될 VPC Subnet
+LOAD_SECURITY_GROUP_ID
+Load Lambda Security Group ID
+Load Lambda에 적용할 Security Group
+airflow-spark-data-collection-pipeline
+clone repository
+https://github.com/youneedpython/airflow-spark-data-collection-pipeline.git
+ 
+folder name
+03-airflow-spark-data-collection-pipeline
+URL
+ID
+PW
+Airflow
+http://localhost:8080
+airflow
+airflow
+Spark Master UI
+http://localhost:8081
+-
+-
+Spark Worker UI 
+http://localhost:8082
+   
+-
+-
+MinIO Console
+http://localhost:9001
+minioadmin
+minioadmin
+MySQL
+airflow-spark-data-collection-pipeline
+books
+books

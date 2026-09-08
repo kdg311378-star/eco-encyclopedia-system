@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+.env.local
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# Data and Images (Local Storage)
+static/images/
+data/
+exports/
+scratch/
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+template-packaged.yaml
+
+# OS generated files
+.DS_Store
+Thumbs.db
