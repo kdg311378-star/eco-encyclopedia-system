@@ -31,8 +31,8 @@ Resources:
   CrawlingFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/crawl/
-      Handler: handler.lambda_handler
+      CodeUri: .
+      Handler: handlers.crawling_handler.lambda_handler
       Policies:
         - S3WritePolicy:
             BucketName: !Ref EcoDataBucket
@@ -40,8 +40,8 @@ Resources:
   ExtractFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/extract/
-      Handler: handler.lambda_handler
+      CodeUri: .
+      Handler: handlers.extract_handler.lambda_handler
       Policies:
         - S3ReadPolicy:
             BucketName: !Ref EcoDataBucket
@@ -51,8 +51,8 @@ Resources:
   PreprocessFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/preprocess/
-      Handler: handler.lambda_handler
+      CodeUri: .
+      Handler: handlers.preprocess_handler.lambda_handler
       Timeout: 120 # Image processing takes longer
       Policies:
         - S3ReadPolicy:
@@ -63,8 +63,8 @@ Resources:
   LoadFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/load/
-      Handler: handler.lambda_handler
+      CodeUri: .
+      Handler: handlers.load_handler.lambda_handler
       VpcConfig:
         SecurityGroupIds:
           - !Ref VpcSecurityGroupId
