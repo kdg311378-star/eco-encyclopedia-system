@@ -1,0 +1,44 @@
+name: Deploy Serverless Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: SAM Build
+        run: sam build
+
+      - name: SAM Deploy
+        run: >
+          sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+          --stack-name eco-encyclopedia-pipeline
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+          --parameter-overrides
+          DBHost=${{ secrets.DB_HOST }}
+          DBSecretArn=${{ secrets.DB_SECRET_ARN }}
+          VpcSubnetId=${{ secrets.LOAD_SUBNET_ID }}
+          VpcSecurityGroupId=${{ secrets.LOAD_SECURITY_GROUP_ID }}

@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Bio Encyclopedia Serverless Pipeline
+
+Parameters:
+  DBHost:
+    Type: String
+    Description: RDS Endpoint URL
+  DBSecretArn:
+    Type: String
+    Description: Secret ARN for RDS Credentials
+  VpcSubnetId:
+    Type: String
+    Description: VPC Subnet ID for Load Lambda
+  VpcSecurityGroupId:
+    Type: String
+    Description: Security Group ID for Load Lambda
+
+Globals:
+  Function:
+    Timeout: 60
+    Runtime: python3.11
+    Environment:
+      Variables:
+        DATA_BUCKET_NAME: !Ref EcoDataBucket
+
+Resources:
+  EcoDataBucket:
+    Type: AWS::S3::Bucket
+
+  CrawlingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/crawl/
+      Handler: handler.lambda_handler
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref EcoDataBucket
+
+  ExtractFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/extract/
+      Handler: handler.lambda_handler
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref EcoDataBucket
+        - S3WritePolicy:
+            BucketName: !Ref EcoDataBucket
+
+  PreprocessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/preprocess/
+      Handler: handler.lambda_handler
+      Timeout: 120 # Image processing takes longer
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref EcoDataBucket
+        - S3WritePolicy:
+            BucketName: !Ref EcoDataBucket
+
+  LoadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/load/
+      Handler: handler.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref VpcSecurityGroupId
+        SubnetIds:
+          - !Ref VpcSubnetId
+      Environment:
+        Variables:
+          DB_HOST: !Ref DBHost
+          DB_SECRET_ARN: !Ref DBSecretArn
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref EcoDataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DBSecretArn
