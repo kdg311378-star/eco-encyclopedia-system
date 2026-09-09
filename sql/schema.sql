@@ -45,3 +45,11 @@ CREATE TABLE IF NOT EXISTS `species_images` (
     CONSTRAINT `fk_species_images_species_id` 
         FOREIGN KEY (`species_id`) REFERENCES `species` (`species_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 3. GBIF 수집 스케줄러 동기화 상태 테이블 (단일 로우)
+CREATE TABLE IF NOT EXISTS `sync_state` (
+    `id` INT NOT NULL DEFAULT 1,
+    `last_gbif_offset` INT NOT NULL DEFAULT 0 COMMENT 'GBIF API에서 마지막으로 읽어온 Offset',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

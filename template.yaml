@@ -82,3 +82,76 @@ Resources:
               Action:
                 - secretsmanager:GetSecretValue
               Resource: !Ref DBSecretArn
+
+  DispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers.dispatcher_handler.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref VpcSecurityGroupId
+        SubnetIds:
+          - !Ref VpcSubnetId
+      Environment:
+        Variables:
+          DB_HOST: !Ref DBHost
+          DB_SECRET_ARN: !Ref DBSecretArn
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DBSecretArn
+
+  DataPipelineStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Definition:
+        StartAt: Dispatcher
+        States:
+          Dispatcher:
+            Type: Task
+            Resource: !GetAtt DispatcherFunction.Arn
+            Next: MapSpecies
+          MapSpecies:
+            Type: Map
+            ItemsPath: "$.target_species"
+            MaxConcurrency: 3
+            Iterator:
+              StartAt: Crawl
+              States:
+                Crawl:
+                  Type: Task
+                  Resource: !GetAtt CrawlingFunction.Arn
+                  Next: Extract
+                Extract:
+                  Type: Task
+                  Resource: !GetAtt ExtractFunction.Arn
+                  Next: Preprocess
+                Preprocess:
+                  Type: Task
+                  Resource: !GetAtt PreprocessFunction.Arn
+                  Next: Load
+                Load:
+                  Type: Task
+                  Resource: !GetAtt LoadFunction.Arn
+                  End: true
+            End: true
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref DispatcherFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CrawlingFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ExtractFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PreprocessFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref LoadFunction
+      Events:
+        DailyRun:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: "cron(0 15 * * ? *)"
+            Name: "EcoDataDailySchedule"

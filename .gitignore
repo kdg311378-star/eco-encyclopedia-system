@@ -32,3 +32,9 @@ data-collection-pipeline_-main/
 airflow-spark-data-collection-pipeline-main/
 docx_content.txt
 read_docx.py
+
+# Testing and Linting Caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
