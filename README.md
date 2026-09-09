@@ -1,112 +1,119 @@
-# 🌿 생물 도감 데이터 자동 수집 백엔드 파이프라인 (Bio Encyclopedia Collector)
+# 생태계 백과사전 데이터 수집 파이프라인 (Eco Encyclopedia Pipeline)
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-Serverless-FF9900)
-![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI/CD-2088FF)
-![MySQL](https://img.shields.io/badge/MySQL-Database-4479A1)
+GBIF(Global Biodiversity Information Facility) API와 Wikipedia, Wikimedia Commons를 연동하여 전 세계 생물 종(Species)의 정보와 이미지를 수집하고, AWS Serverless 환경에서 단계별로 정제 및 처리하는 대규모 데이터 수집 파이프라인 프로젝트입니다.
 
-> **위키백과(Wikipedia)**, **위키미디어 커먼즈(Wikimedia Commons)**, 그리고 **GBIF(세계 생물다양성 정보기구)**를 연동하여 특정 생물 종(Species)의 족보(Taxonomy), 서식지 정보, 고해상도 이미지를 자동 수집하고 클라우드(S3 및 RDS)에 적재하는 서버리스(Serverless) 데이터 파이프라인 플랫폼입니다.
+현재 프로젝트는 **AWS Serverless (EventBridge + Step Functions + Lambda)** 구조를 기반으로 완전 자동화된 수집 파이프라인을 제공합니다.
 
----
+- **AWS 파이프라인**: Dispatcher Lambda → Step Functions Map State → [ Crawling Lambda → S3 Raw → Extract Lambda → S3 Interim → Preprocess Lambda → S3 Processed → Load Lambda → Amazon RDS MySQL ]
 
-## ✨ 핵심 아키텍처 (AWS Serverless)
-
-본 프로젝트는 무거운 컨테이너(Docker)나 항상 켜져 있는 서버(EC2) 없이, **AWS SAM (Serverless Application Model)** 을 활용한 완전 관리형 서버리스 아키텍처로 구동됩니다.
-
-1.  **Crawling Lambda**: GBIF 또는 트리거를 통해 학명을 전달받아 위키백과(HTML) 및 커먼즈(API) 데이터를 즉시 수집하고 원시 데이터를 S3(`raw/`)에 저장합니다.
-2.  **Extract Lambda**: S3의 원본 데이터에서 BeautifulSoup을 사용해 Taxonomy(분류계통)와 서식지만 추출하고 정제하여 S3(`interim/`)에 넘깁니다.
-3.  **Preprocess Lambda**: 이미지 다운로드, WebP 고효율 압축 변환 및 pHash(64비트 지문) 알고리즘을 통한 이미지 완전 중복 차단을 수행하고 S3(`processed/`)에 보관합니다.
-4.  **Load Lambda**: 최종 완성된 정제 데이터와 S3 이미지 링크를 프라이빗 VPC 내부에 위치한 **AWS RDS (MySQL)** 데이터베이스에 안전하게 꽂아 넣습니다.
+또한 \pytest\, \Ruff\, GitHub Actions를 이용하여 코드 품질과 테스트를 자동으로 검증(CI)하며, AWS SAM을 이용하여 인프라(Lambda, S3, Step Functions 등)를 깃허브에서 직접 배포(CD)합니다. Load 및 Dispatcher 단계에서는 AWS Secrets Manager의 RDS 관리형 Secret과 VPC 네트워크 구성을 이용해 Private RDS MySQL에 안전하게 통신합니다.
 
 ---
 
-## 🚀 왜 Playwright 대신 API를 선택했는가?
+## 1. 프로젝트 목표
 
-기존 브라우저 자동화 도구(Playwright)는 무거운 Docker 이미지를 요구하며 AWS Lambda의 구동 속도를 크게 저하시켰습니다. 이를 해결하기 위해:
-*   위키백과는 초경량 **`BeautifulSoup`** 파서로 대체.
-*   커먼즈 미디어는 마우스 클릭 대신 **`Wikimedia REST API`**로 통신.
-*   **결과**: 람다 함수 용량이 불과 수 MB 단위로 줄어들었으며 수집 속도는 수십 배 빨라졌습니다.
+이 프로젝트의 주요 목표는 다음과 같습니다.
 
----
-
-## 🛠 환경 설정 및 설치 가이드 (로컬 테스트용)
-
-클라우드에 배포하기 전, 로컬에서 터미널을 통해 파이프라인 단계를 테스트할 수 있습니다.
-
-### 1. 패키지 설치
-```bash
-# 필수 라이브러리 설치
-pip install -r requirements.txt
-```
-
-### 2. 환경 변수 설정
-프로젝트 최상단에 `.env` 파일을 만들고 로컬 또는 테스트 DB 접속 정보를 적습니다.
-```env
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=your_db_username
-DB_PASSWORD=your_db_password
-DB_NAME=bio_encyclopedia
-```
-
-### 3. 데이터베이스 초기화
-```bash
-python init_db.py
-```
-
-### 4. 로컬 파이프라인 실행
-```bash
-python run_pipeline.py "황소개구리"
-python run_pipeline.py "Ursus arctos" "불곰" NATIVE
-```
+- GBIF API에서 겹치지 않는 신규 생물 종 데이터를 지속적으로 수집합니다. (Infinite Polling)
+- 한 번의 수집(크롤링~적재) 단계를 \atch_id\ 기준으로 안전하게 추적 및 관리합니다.
+- 원본 HTML/JSON, 파싱 데이터, 전처리 데이터를 S3의 단계별 폴더(aw\, \interim\, \processed\)로 분리 저장합니다.
+- AWS 환경에서 Lambda별 책임을 철저히 분리하고 S3를 단계 간 대용량 데이터 전달 저장소로 활용합니다.
+- Step Functions의 Map State를 활용하여 한 번에 여러 생물 종 데이터를 병렬(Concurrent)로 빠르게 처리합니다.
+- S3 텍스트뿐만 아니라 생물의 이미지(phash 중복 제거 적용)까지 추출하여 저장합니다.
+- \pytest\와 \Ruff\를 이용해 깃허브에 코드가 올라갈 때마다 코드 포맷팅과 테스트를 자동 검증(CI)합니다.
+- AWS SAM 및 OIDC를 활용하여 깃허브 환경에서 안전하고 자동화된 배포(CD)를 구성합니다.
 
 ---
 
-## 🔒 배포 가이드 (CI/CD)
+## 2. 전체 구성
 
-이 저장소는 GitHub Actions와 AWS OIDC(OpenID Connect)를 통해 안전하게 AWS 클라우드로 배포됩니다. `.env` 파일은 깃허브에 절대 올라가지 않으며, 프로덕션 환경 변수는 **GitHub Secrets**를 통해 주입됩니다.�다.
+### AWS 서버리스 파이프라인
 
-### 1️⃣ 웹 대시보드 모드 (권장)
-터미널에 아래 명령어를 입력하면 브라우저가 열리며 대시보드가 나타납니다.
-```bash
-python -m streamlit run app.py
-```
+현재 AWS 환경에서는 스케줄러를 통해 지휘관 람다(Dispatcher)가 깨어나고, Step Functions를 통해 하위 작업들이 병렬로 실행됩니다.
 
-![웹 대시보드 메인 화면](assets/dashboard_screenshot.png)
-- **탭 1 (단일 종 수집)**: `뉴트리아`, `Rhinella marina` 처럼 단어를 치고 🖱️[수집 시작]을 누릅니다.
-- **탭 2 (갤러리 및 표)**: 지금까지 수집한 동물/식물의 멋진 도감을 감상하고 엑셀(CSV)로 다운로드합니다.
-- **탭 3 (대규모 수집)**: GBIF 연동을 통해 특정 '과/목/강' 에 속한 동물들을 대량으로 긁어옵니다.
-
-### 2️⃣ CLI (터미널) 모드
-웹을 띄우지 않고 백그라운드 서버 스크립트나 터미널에서 직접 실행할 수도 있습니다.
-```bash
-# 학명이나 국명 중 하나만 입력해도 무방합니다.
-python run_pipeline.py "황소개구리"
-python run_pipeline.py "Ursus arctos" "불곰" NATIVE
-```
-
+\\	ext
+EventBridge (매일 0시)
+       ↓
+Dispatcher Lambda (GBIF 신규 생물 탐색 및 MySQL 오프셋 기록)
+       ↓
+AWS Step Functions (Map State)
+       │
+       ├─▶ Crawling Lambda (위키백과 HTML & 위키미디어 API 요청)
+       │          ↓
+       │   Amazon S3 (raw/{batch_id}/)
+       │          ↓
+       ├─▶ Extract Lambda (HTML 파싱, Taxobox 및 이미지 주소 추출)
+       │          ↓
+       │   Amazon S3 (interim/{batch_id}/)
+       │          ↓
+       ├─▶ Preprocess Lambda (데이터 클렌징, 이미지 pHash 계산)
+       │          ↓
+       │   Amazon S3 (processed/{batch_id}/)
+       │          ↓
+       └─▶ Load Lambda (RDS MySQL 적재)
+                  ↓
+       AWS Secrets Manager (DB 비밀번호 조회)
+                  ↓
+           Amazon RDS MySQL
+         (species, species_images 테이블 UPSERT)
+\
 ---
 
-## 📂 디렉토리 및 아키텍처 구조
+## 3. 프로젝트 구조
 
-```text
-c:\project\eco_encyclopedia_system\
-├── app.py                 # 🌟 Streamlit 웹 대시보드 진입점 (Main)
-├── run_pipeline.py        # ⚙️ 파이프라인 배치 실행 진입점 (CLI)
-├── config/
-│   └── database.py        # DB 환경변수 래퍼 및 커넥션 설정
-├── core/
-│   ├── crawler.py         # Playwright 기반 비동기 웹 크롤러 엔진
-│   ├── parser.py          # Wikipedia/Commons DOM 구조 파서
-│   ├── processor.py       # WebP 변환 및 이미지 pHash 계산
-│   ├── gbif_api.py        # GBIF 대규모 종 리스트 추출 API 연동 모듈
-│   └── db_manager.py      # MySQL 트랜잭션 및 조회/저장 쿼리 관리
-├── sql/
-│   └── schema.sql         # DB 구조를 정의하는 DDL 스크립트
-├── static/
-│   └── images/
-│       └── species/       # 수집된 WebP 물리적 이미지 저장 폴더
-├── init_db.py             # DB 스키마 초기화 스크립트
-├── requirements.txt       # 의존성 패키지 리스트
-└── README.md              # 프로젝트 안내 문서 (현재 파일)
-```
+\\	ext
+eco_encyclopedia_system/
+│
+├─ .github/
+│  └─ workflows/
+│     ├─ ci.yml             # 코드 품질 및 테스트 검증 워크플로우
+│     └─ deploy.yml         # AWS SAM 기반 인프라 배포 워크플로우 (수동 트리거)
+│
+├─ handlers/
+│  ├─ dispatcher_handler.py # 스케줄러 진입점 람다
+│  ├─ crawling_handler.py   # 크롤링 람다
+│  ├─ extract_handler.py    # 데이터 파싱 람다
+│  ├─ preprocess_handler.py # 전처리 람다
+│  └─ load_handler.py       # RDS 적재 람다
+│
+├─ src/
+│  └─ eco_encyclopedia/
+│     ├─ crawling.py
+│     ├─ dispatch.py
+│     ├─ extract.py
+│     ├─ load.py
+│     ├─ preprocess.py
+│     ├─ s3_storage.py
+│     └─ database.py
+│
+├─ sql/
+│  └─ schema.sql            # RDS MySQL 테이블 (species, images, sync_state) 정의 
+│
+├─ tests/                   # pytest 모의(Mock) 테스트 코드
+├─ .env.example             # 환경변수 예시
+├─ pyproject.toml / .gitignore
+├─ requirements.txt         # 프로덕션 패키지
+├─ requirements-dev.txt     # 개발 및 테스트 패키지
+└─ template.yaml            # AWS SAM 리소스 정의 템플릿
+\
+---
+
+## 4. 주요 데이터 흐름 및 테이블
+
+### MySQL 테이블 스키마 (\sql/schema.sql\)
+1. **\species\**: 생물의 학명(scientific_name), 국명, 분류(계/문/강/목/과/속), 서식지 정보, S3 저장 경로 등 핵심 데이터를 담습니다.
+2. **\species_images\**: 생물의 이미지 S3 경로, 저작권자, pHash(중복 제거용) 등을 저장합니다. (\species\ 테이블과 1:N 관계)
+3. **\sync_state\**: GBIF API에서 지금까지 어디까지 읽었는지(Offset) 기억하여 무한 루프 수집이 가능하게 하는 스케줄러 상태 테이블입니다.
+
+### S3 데이터 구조
+- aw/{batch_id}/wikipedia.html- aw/{batch_id}/commons.json- \interim/{batch_id}/parsed_metadata.json- \processed/{batch_id}/final_metadata.json
+---
+
+## 5. AWS SAM 구성 (\	emplate.yaml\)
+
+- **\EcoDataBucket\**: 파이프라인 데이터를 단계별로 저장하는 S3 버킷
+- **\DataPipelineStateMachine\**: Map 상태를 통해 종(Species) 목록을 받아 병렬 크롤링을 관장하는 AWS Step Functions
+- **\DispatcherFunction\**: EventBridge 룰에 의해 매일 트리거되어 타겟 생물 목록을 찾아 State Machine에 던져주는 진입점 람다
+- **\Crawling / Extract / Preprocess / Load Functions\**: 각각의 역할을 수행하는 람다 함수들. (\Load\와 \Dispatcher\는 RDS 접근을 위해 VPC/서브넷에 위치)
+
+배포는 GitHub Actions의 \Deploy Serverless Pipeline\ 탭에서 수동(\workflow_dispatch\)으로 트리거할 수 있으며, 배포 시 환경 변수로 주입되는 Secret ARN과 서브넷 정보를 기반으로 AWS 클라우드에 자동 구성됩니다.
