@@ -35,6 +35,7 @@ jobs:
         run: >
           sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
           --stack-name eco-encyclopedia-pipeline
+          --resolve-s3
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
           --parameter-overrides
           DBHost=${{ vars.DB_HOST }}
