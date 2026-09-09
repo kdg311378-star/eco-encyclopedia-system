@@ -1,5 +1,7 @@
 import pytest
+
 from src.eco_encyclopedia.crawling import crawl_species
+
 
 def test_crawl_species_mock(mocker):
     # 1. Mock requests.get to prevent real HTTP calls

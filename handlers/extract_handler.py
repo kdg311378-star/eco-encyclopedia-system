@@ -1,5 +1,6 @@
 from src.eco_encyclopedia.extract import extract_data
 
+
 def lambda_handler(event, context):
     batch_id = event.get("batch_id")
     if not batch_id:

@@ -1,10 +1,13 @@
+import datetime
 import io
 import json
-import datetime
+
+import imagehash
 import requests
 from PIL import Image
-import imagehash
+
 from src.eco_encyclopedia.s3_storage import read_from_s3, save_to_s3
+
 
 def calculate_phash(image_bytes: bytes) -> str:
     with Image.open(io.BytesIO(image_bytes)) as img:

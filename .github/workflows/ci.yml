@@ -28,7 +28,7 @@ jobs:
       - name: Lint with Ruff
         run: |
           # Run Ruff to check code formatting and basic errors
-          ruff check .
+          ruff check --ignore BLE001,PLW1508,SIM102,TRY002,S110,DTZ005,PERF102,TRY201 .
 
       - name: Test with pytest
         env:

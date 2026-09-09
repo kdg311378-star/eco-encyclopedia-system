@@ -1,4 +1,5 @@
 import os
+
 import boto3
 
 IS_LOCAL = os.environ.get("AWS_SAM_LOCAL") == "true" or os.environ.get("LOCAL_MOCK") == "true"

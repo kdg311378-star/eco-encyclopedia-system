@@ -1,6 +1,9 @@
 import urllib.parse
+
 import requests
+
 from src.eco_encyclopedia.s3_storage import save_to_s3
+
 
 def crawl_species(sci_name: str, batch_id: str):
     # 1. Fetch Wikipedia HTML

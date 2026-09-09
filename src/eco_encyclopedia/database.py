@@ -1,7 +1,9 @@
-import os
 import json
-import mysql.connector
+import os
+
 import boto3
+import mysql.connector
+
 
 def get_db_connection():
     IS_LOCAL = os.environ.get("AWS_SAM_LOCAL") == "true" or os.environ.get("LOCAL_MOCK") == "true"

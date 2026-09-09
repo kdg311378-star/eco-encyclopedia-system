@@ -1,6 +1,7 @@
-import urllib.request
-import urllib.parse
 import json
+import urllib.parse
+import urllib.request
+
 
 def get_taxon_key(name: str, rank: str) -> int:
     """

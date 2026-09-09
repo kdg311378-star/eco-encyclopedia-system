@@ -1,5 +1,6 @@
 from src.eco_encyclopedia.load import load_data_to_db
 
+
 def lambda_handler(event, context):
     batch_id = event.get("batch_id")
     if not batch_id:

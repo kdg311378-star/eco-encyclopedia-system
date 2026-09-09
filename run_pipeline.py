@@ -1,13 +1,14 @@
-import sys
 import os
+import sys
 
 # Set local mock env
 os.environ["LOCAL_MOCK"] = "true"
 
 from handlers.crawling_handler import lambda_handler as crawl_handler
 from handlers.extract_handler import lambda_handler as extract_handler
-from handlers.preprocess_handler import lambda_handler as preprocess_handler
 from handlers.load_handler import lambda_handler as load_handler
+from handlers.preprocess_handler import lambda_handler as preprocess_handler
+
 
 def run_local(sci_name, common_name="국명 미상"):
     print(f"--- Local Pipeline Test: {sci_name} ---")

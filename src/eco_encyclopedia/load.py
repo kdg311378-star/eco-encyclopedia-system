@@ -1,7 +1,10 @@
 import json
+
 import mysql.connector
-from src.eco_encyclopedia.s3_storage import read_from_s3
+
 from src.eco_encyclopedia.database import get_db_connection
+from src.eco_encyclopedia.s3_storage import read_from_s3
+
 
 def load_data_to_db(batch_id: str):
     final_json_str = read_from_s3(f"processed/{batch_id}/final_metadata.json")

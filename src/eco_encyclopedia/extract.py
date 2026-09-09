@@ -1,6 +1,9 @@
 import json
+
 from bs4 import BeautifulSoup
+
 from src.eco_encyclopedia.s3_storage import read_from_s3, save_to_s3
+
 
 def parse_wikipedia_taxobox(html_content: str) -> str:
     taxonomy = {}

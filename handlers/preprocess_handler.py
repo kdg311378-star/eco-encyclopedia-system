@@ -1,5 +1,6 @@
 from src.eco_encyclopedia.preprocess import preprocess_images
 
+
 def lambda_handler(event, context):
     batch_id = event.get("batch_id")
     sci_name = event.get("scientific_name")

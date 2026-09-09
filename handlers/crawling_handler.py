@@ -1,5 +1,7 @@
 import uuid
+
 from src.eco_encyclopedia.crawling import crawl_species
+
 
 def lambda_handler(event, context):
     sci_name = event.get("scientific_name")

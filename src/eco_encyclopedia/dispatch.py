@@ -1,7 +1,9 @@
 import json
-import urllib.request
 import urllib.parse
+import urllib.request
+
 from src.eco_encyclopedia.database import get_db_connection
+
 
 def get_current_offset() -> int:
     """DB에서 마지막으로 검색한 GBIF 오프셋을 가져옵니다."""

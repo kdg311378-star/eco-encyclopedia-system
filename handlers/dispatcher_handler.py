@@ -1,5 +1,5 @@
-import json
 import logging
+
 from src.eco_encyclopedia.dispatch import get_target_species_for_today
 
 logger = logging.getLogger()
