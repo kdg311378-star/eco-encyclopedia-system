@@ -17,8 +17,8 @@ jobs:
       - name: Configure AWS Credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -37,7 +37,7 @@ jobs:
           --stack-name eco-encyclopedia-pipeline
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
           --parameter-overrides
-          DBHost=${{ secrets.DB_HOST }}
-          DBSecretArn=${{ secrets.DB_SECRET_ARN }}
-          VpcSubnetId=${{ secrets.LOAD_SUBNET_ID }}
-          VpcSecurityGroupId=${{ secrets.LOAD_SECURITY_GROUP_ID }}
+          DBHost=${{ vars.DB_HOST }}
+          DBSecretArn=${{ vars.DB_SECRET_ARN }}
+          VpcSubnetId=${{ vars.LOAD_SUBNET_ID }}
+          VpcSecurityGroupId=${{ vars.LOAD_SECURITY_GROUP_ID }}
